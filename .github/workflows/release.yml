@@ -1,0 +1,42 @@
+name: Publish release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already prepared and merged to main (X.Y.Z)
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    name: Validate and publish stable release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      RELEASE_VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '7.4'
+          coverage: none
+      - name: Validate prepared version and run checks
+        run: |
+          python3 scripts/release.py check --version "$RELEASE_VERSION"
+          find . -type f -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+          php tests/plugin-contract.php
+          php tests/updater-contract.php
+          python3 tests/release-contract.py
+      - name: Publish immutable assets from the checked commit
+        run: python3 scripts/publish.py
