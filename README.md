@@ -1,6 +1,6 @@
 # CookieYes Integration
 
-Version **0.2.0** · Author **Amsive** · GPL-2.0-or-later
+Version **0.3.0** · Author **Amsive** · GPL-2.0-or-later
 
 A universal WordPress integration for your CookieYes banner. Each site uses its own website key; no customer names, domains or tracking IDs are embedded in the plugin.
 
@@ -16,9 +16,17 @@ Activation leaves banner output disabled by default. The key input accepts only 
 
 The plugin prints the vendor's blocking script at `wp_head` priority 0. Tracking hardcoded before `wp_head()` still precedes it and needs a theme change. Verify actual HTML and network behavior; ordering alone does not configure consent-aware tags.
 
-Use one installation path: this plugin, the official CookieYes plugin, or the official GTM integration. This plugin does not detect or remove other snippets. Exclude CookieYes from optimizations that delay or reorder scripts. Sites using CSP must permit the vendor's required script and network connections; this direct tag does not add a CSP nonce.
+Use one installation path: this plugin, the official CookieYes plugin, or the official GTM integration. The manual frontend check detects recognized direct snippets in the homepage HTML; it does not remove them. Exclude CookieYes from optimizations that delay or reorder scripts. Sites using CSP must permit the vendor's required script and network connections; this direct tag does not add a CSP nonce.
 
 Banner design, consent categories, languages, logging and consent rules remain in CookieYes. This plugin does not configure GTM, GA4, Consent Mode, cookie policies or migrations from another consent service.
+
+## Frontend integration check
+
+Open **Settings → CookieYes Integration → Check integration** after saving settings. The plugin fetches the configured public homepage without your login cookies, follows no redirects, and checks the HTML for the saved CookieYes key, duplicate tags, head placement, async/defer/delayed loading, recognized Google snippet order and active legacy Cookiebot scripts. The request stays on the configured homepage URL and keeps HTTPS certificate verification enabled, including on local installations.
+
+The single **Check integration** button tries the server first. If the server cannot fetch usable homepage HTML, it automatically fetches HTML through this browser without login cookies and sends it to the same site for analysis. A completed analysis that finds problems does not trigger a fallback. It keeps server certificate verification enabled and does not execute the fetched page scripts. The browser method uses a fresh request and may receive a different response from the server check. Results identify the fetch method, checked URL, site-local time, findings and next actions. They are cached per administrator for one hour and discarded when the configured URL, settings or plugin version changes. A failed fetch, inaccessible PHP DOM parser or unrecognized script order is **not verified**, never a pass. The homepage check may still receive cached or region-specific HTML and does not cover every page or identify every custom/proxied tracker. Browser tests are still required to establish actual script execution, CDN/network delivery, consent defaults, cookies and accept/reject/category/reopen behavior. The plugin sends no developer messages and changes no theme, GTM or consent settings.
+
+The top notice asks for a check when no current result is available, shows progress while checking, and highlights the main detected issue or an incomplete check. When all HTML checks pass, the top notice is hidden; the detailed result and scope remain below. Installation guidance is ordinary help text rather than a permanent warning.
 
 ## Updates and releases
 
@@ -33,6 +41,7 @@ WordPress 6.0+, PHP 7.4+. CI checks PHP 7.4, 8.2 and 8.4. Isolated contract test
 ```sh
 php tests/plugin-contract.php
 php tests/updater-contract.php
+php tests/diagnostics-contract.php
 python3 tests/release-contract.py
 python3 scripts/release.py check
 python3 scripts/release.py build

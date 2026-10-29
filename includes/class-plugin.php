@@ -11,6 +11,8 @@ final class Plugin {
 
     public function register() {
         add_action( 'wp_head', array( $this, 'render_script' ), 0 );
+        add_action( 'wp_ajax_amsive_cookieyes_server_check', array( Diagnostics::class, 'server_check' ) );
+        add_action( 'wp_ajax_amsive_cookieyes_browser_check', array( Diagnostics::class, 'browser_check' ) );
         $settings = new Settings();
         add_action( 'admin_init', array( $settings, 'register' ) );
         add_action( 'admin_menu', array( $settings, 'menu' ) );

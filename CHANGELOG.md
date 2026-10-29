@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- Show a state-based top notice before checks, during checks and for the main issue; hide it when all HTML checks pass.
+- Display by Amsive beside the installed version.
+
+- Add an on-demand administrator check of anonymous homepage HTML, including CookieYes configuration, duplicates, loading attributes, Google script order and legacy Cookiebot scripts.
+- Use one check button with automatic browser fallback when the server cannot fetch the homepage.
+- Add a browser-assisted HTML check for local HTTPS or loopback restrictions without disabling server TLS verification.
+- Show actionable findings, URL, timestamp and explicit browser-verification limits without changing settings or sending notifications.
+
 ## 0.2.0
 
 - Show the installed plugin version beside the settings title.

@@ -64,12 +64,13 @@ final class Settings {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( esc_html__( 'You do not have permission to manage these settings.', 'cookieyes-integration' ) );
         }
+        Diagnostics::prepare();
         $settings = self::get();
         ?>
         <div class="wrap">
-            <h1><?php echo esc_html__( 'CookieYes Integration', 'cookieyes-integration' ); ?> <small style="font-size:13px;font-weight:400;color:#646970;vertical-align:middle">v<?php echo esc_html( COOKIEYES_INTEGRATION_VERSION ); ?></small></h1>
+            <h1><?php echo esc_html__( 'CookieYes Integration', 'cookieyes-integration' ); ?> <small style="font-size:13px;font-weight:400;color:#646970;vertical-align:middle">v<?php echo esc_html( COOKIEYES_INTEGRATION_VERSION ); ?> · <?php echo esc_html__( 'by Amsive', 'cookieyes-integration' ); ?></small></h1>
             <p><?php echo esc_html__( 'Connect this site to your CookieYes account. Manage banner design, categories, languages, and consent rules in CookieYes.', 'cookieyes-integration' ); ?></p>
-            <div class="notice notice-warning inline"><p><?php echo esc_html__( 'Use one CookieYes installation only. Remove any existing direct snippet, GTM installation, or other CookieYes plugin before enabling this integration. Tracking scripts must load after CookieYes; scripts printed before wp_head() require a theme change.', 'cookieyes-integration' ); ?></p></div>
+            <?php Diagnostics::notice(); ?>
             <form action="options.php" method="post">
                 <?php settings_fields( self::GROUP ); ?>
                 <table class="form-table" role="presentation">
@@ -88,7 +89,9 @@ final class Settings {
                 <?php submit_button(); ?>
             </form>
             <p><?php echo esc_html__( 'After saving, clear the relevant page cache and verify the banner and tracking consent in a fresh browser session. Exclude the CookieYes script from script delay, combination, and async/defer optimizations.', 'cookieyes-integration' ); ?></p>
+            <p class="description"><?php echo esc_html__( 'Use one CookieYes installation only. Remove duplicate direct snippets, GTM installations or other CookieYes plugins. Tracking hardcoded before wp_head() requires a theme change.', 'cookieyes-integration' ); ?></p>
             <p><a href="https://www.cookieyes.com/documentation/banner-installation-code/" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'CookieYes installation instructions', 'cookieyes-integration' ); ?></a></p>
+            <?php Diagnostics::render(); ?>
         </div>
         <?php
     }

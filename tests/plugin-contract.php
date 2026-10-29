@@ -1,12 +1,17 @@
 <?php
 /** Focused contract checks with WordPress API doubles; no site or database writes. */
 define( 'ABSPATH', __DIR__ );
+define( 'HOUR_IN_SECONDS', 3600 );
 $saved = array();
 $hooks = array();
 $errors = array();
 $can_manage = true;
 $registered = array();
 
+function get_current_user_id() { return 1; }
+function home_url( $path = '' ) { return 'https://example.test/' . ltrim( $path, '/' ); }
+function get_transient( $key ) { return false; }
+function wp_nonce_field( $action ) { echo '<input type="hidden" name="_wpnonce" value="test-double">'; }
 function get_option( $name, $default = false ) { global $saved; return $saved[ $name ] ?? $default; }
 function add_action( $hook, $callback, $priority = 10 ) { global $hooks; $hooks[ $hook ][ $priority ][] = $callback; }
 function add_filter( $hook, $callback ) { add_action( $hook, $callback ); }
@@ -14,6 +19,7 @@ function plugin_basename( $file ) { return basename( dirname( $file ) ) . '/' . 
 function is_admin() { return false; }
 function current_user_can( $cap ) { global $can_manage; return $can_manage; }
 function __( $s, $domain = '' ) { return $s; }
+function wp_json_encode( $value ) { return json_encode( $value, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); }
 function esc_html__( $s, $domain = '' ) { return htmlspecialchars( $s, ENT_QUOTES ); }
 function esc_url( $s ) { return htmlspecialchars( $s, ENT_QUOTES ); }
 function esc_html( $s ) { return htmlspecialchars( $s, ENT_QUOTES ); }
@@ -88,5 +94,5 @@ $can_manage = true;
 $admin = output( array( $settings, 'page' ) );
 check( false !== strpos( $admin, 'name="_wpnonce"' ) && false !== strpos( $admin, 'action="options.php"' ), 'Admin form must use WordPress Settings API.' );
 check( false !== strpos( $admin, 'value="' . $key . '"' ), 'Saved key is missing from the settings form.' );
-check( false !== strpos( $admin, 'v' . COOKIEYES_INTEGRATION_VERSION . '</small>' ), 'Version label missing.' );
+check( false !== strpos( $admin, 'v' . COOKIEYES_INTEGRATION_VERSION . ' · by Amsive</small>' ), 'Version label missing.' );
 echo "PASS: {$checks} isolated contract checks. WordPress API doubles; no browser or real options.php execution.\n";
