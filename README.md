@@ -1,6 +1,6 @@
 # CookieYes Integration
 
-Version **0.3.0** · Author **Amsive** · GPL-2.0-or-later
+Version **0.3.1** · Author **Amsive** · GPL-2.0-or-later
 
 A universal WordPress integration for your CookieYes banner. Each site uses its own website key; no customer names, domains or tracking IDs are embedded in the plugin.
 
@@ -28,6 +28,10 @@ The single **Check integration** button tries the server first. If the server ca
 
 The top notice asks for a check when no current result is available, shows progress while checking, and highlights the main detected issue or an incomplete check. When all HTML checks pass, the top notice is hidden; the detailed result and scope remain below. Installation guidance is ordinary help text rather than a permanent warning.
 
+The **Cache and JavaScript optimization** finding detects identifiable local copies, WP Rocket-style minification markers and delay/defer. A matching key in a local copy URL is **not verified**, since the original CDN source and copy contents cannot be confirmed from HTML. A visible key mismatch or untrusted script source remains a **problem**. Source trust is separate from loading attributes: a foreign host does not imply defer or wrong placement. Relative URLs use the first active HTML base href when checking script origin and mixed content. If optimized JavaScript is present but the CookieYes tag is missing, the first finding explains that combination may have hidden it; this does not prove CookieYes is inside the combined file. Developer inspection is still required.
+
+If WP Rocket is used, open **File Optimization → JavaScript → Excluded JavaScript Files** for minification/combination and add `cdn-cookieyes.com`. If delayed or deferred loading is detected, add it to the separate **Delay JavaScript execution** or **Load JavaScript deferred → Excluded JavaScript Files** field as appropriate. With another optimizer or a theme loader, exclude CookieYes in that tool or remove the loading attribute at its source. Restore the original CDN URL first: domain-based delay/defer exclusions do not match a locally hosted URL. Save changes, clear the relevant optimizer and hosting/page caches (for example, WP Engine), then rerun **Check integration**. Clearing caches alone recreates optimized copies while the responsible optimization stays enabled; a manually hosted copy needs its installation URL corrected. These are manual instructions; the plugin changes no optimizer settings and static HTML results do not establish consent correctness.
+
 ## Updates and releases
 
 The native WordPress updater checks stable public GitHub releases; no customer GitHub token is required. Enable **Auto-updates** on WordPress's Plugins screen to opt in. WordPress and host policies still apply. Development Git checkouts are not forced to update. For preparation, publishing and rollback rules see [RELEASE.md](RELEASE.md).
@@ -54,3 +58,7 @@ Settings use the WordPress Settings API, capability checks and nonces. On multis
 - [CookieYes installation code](https://www.cookieyes.com/documentation/banner-installation-code/)
 - [CookieYes script order](https://www.cookieyes.com/documentation/custom-data-layer/)
 - [WordPress update hooks](https://developer.wordpress.org/reference/hooks/update_plugins_hostname/)
+- [WP Rocket JavaScript minification and combination](https://docs.wp-rocket.me/article/1351-javascript-minify-combine)
+- [WP Rocket external JavaScript exclusions](https://docs.wp-rocket.me/article/39-excluding-external-js-from-concatenation)
+- [WP Rocket delay and exclusions](https://docs.wp-rocket.me/article/1349-delay-javascript-execution)
+- [WP Rocket defer exclusions](https://docs.wp-rocket.me/article/976-exclude-files-from-defer-js)

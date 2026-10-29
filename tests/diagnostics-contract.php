@@ -29,7 +29,7 @@ function wp_nonce_field( $action ) { echo '<input type="hidden" name="_wpnonce" 
 function get_transient( $key ) { global $transients; return $transients[$key] ?? false; }
 function set_transient( $key, $data, $ttl ) { global $transients; $transients[$key] = $data; }
 function wp_date( $format, $time ) { return gmdate( $format, $time ); }
-function wp_parse_url( $url, $component ) { return parse_url( $url, $component ); }
+function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
 function wp_remote_get( $url, $args ) { global $http, $requests; $requests[] = array( $url, $args ); return $http; }
 function wp_remote_retrieve_response_code( $r ) { return $r['response']['code']; }
 function wp_remote_retrieve_body( $r ) { return $r['body']; }
@@ -43,12 +43,94 @@ $checks = 0;
 function check( $condition, $message ) { global $checks; ++$checks; if ( ! $condition ) { throw new RuntimeException( $message ); } }
 function page( $head, $body = '<p>Content</p>' ) { return '<!doctype html><html><head>' . $head . '</head><body>' . $body . '</body></html>'; }
 function findings( $head, $body = '<p>Content</p>' ) { global $settings; $items = Diagnostics::analyze( page( $head, $body ), $settings ); $out = array(); foreach ( $items as $item ) { $out[$item['title']] = $item['status']; } return $out; }
+function detail( $head, $title ) { global $settings; foreach ( Diagnostics::analyze( page( $head ), $settings ) as $item ) { if ( $item['title'] === $title ) { return $item['detail']; } } throw new RuntimeException( 'Missing finding: ' . $title ); }
 function render() { ob_start(); try { Diagnostics::prepare(); Diagnostics::render(); return ob_get_contents(); } finally { ob_end_clean(); } }
 $cmp = '<script id="cookieyes" src="https://cdn-cookieyes.com/client_data/example1234/script.js"></script>';
 $gtm = '<script src="https://www.googletagmanager.com/gtm.js?id=GTM-EXAMPLE"></script>';
 $f = findings( $cmp . $gtm );
 check( 'pass' === $f['Google script order'], 'Correct order should pass the static check.' );
 check( ! in_array( 'problem', $f, true ), 'Correct sample reported an error.' );
+check( 'pass' === $f['Cache and JavaScript optimization'], 'Original CDN tag should have no optimization finding.' );
+check( 'pass' === findings( str_replace( '<script ', '<script data-no-minify="1" data-minify="0" data-nowprocket ', $cmp ) )['Cache and JavaScript optimization'], 'Exclusion attributes must not be mistaken for an optimization.' );
+$cached = '<script data-minify="1" id="cookieyes" type="text/javascript" src="https://example.test/wp-content/cache/min/1/client_data/example1234/script.js?ver=1234567890"></script>';
+$cached_findings = findings( $cached . $gtm );
+check( 'problem' === $cached_findings['Cache and JavaScript optimization'], 'WP Rocket local minification was missed.' );
+check( 'unknown' === $cached_findings['Website key'], 'A matching cache path must not be reported as a wrong key or a verified CDN source.' );
+check( 'pass' === $cached_findings['Loading attributes and placement'], 'URL rewriting alone must not imply unsafe loading attributes.' );
+check( 'Cache and JavaScript optimization' === Diagnostics::summary( array( 'items' => Diagnostics::analyze( page( $cached . $gtm ), $settings ) ) )['title'], 'Optimization should be the main actionable problem for a rewritten tag.' );
+$optimization = detail( $cached, 'Cache and JavaScript optimization' );
+foreach ( array( 'WP Rocket → File Optimization → JavaScript → Excluded JavaScript Files (minification/combination)', 'cdn-cookieyes.com', 'Clearing caches alone recreates', 'Save changes', 'WP Engine', 'rerun Check integration' ) as $instruction ) {
+    check( false !== strpos( $optimization, $instruction ), 'Missing optimization remedy: ' . $instruction );
+}
+check( false !== strpos( detail( $cached, 'Website key' ), 'matches the saved key' ), 'Cache-path key observation should be explained.' );
+foreach ( array( str_replace( ' data-minify="1"', '', $cached ), str_replace( 'https://example.test', '', $cached ), str_replace( 'https://example.test', '//example.test', $cached ), str_replace( 'https://example.test', 'https://example.test:443', $cached ), str_replace( ' id="cookieyes"', '', $cached ) ) as $local_copy ) {
+    check( 'problem' === findings( $local_copy )['Cache and JavaScript optimization'] && 'unknown' === findings( $local_copy )['Website key'], 'Local cache recognition must not depend on the id/marker or absolute URL.' );
+}
+$local_copy = str_replace( 'https://cdn-cookieyes.com', 'https://example.test', $cmp );
+check( 'problem' === findings( $local_copy )['Cache and JavaScript optimization'] && 'unknown' === findings( $local_copy )['Website key'], 'Unminified local hosting must still be reported without claiming CDN verification.' );
+$combined = str_replace( 'client_data/example1234/script.js', 'combined-example.js', $cached );
+check( 'unknown' === findings( $combined )['Website key'] && 'problem' === findings( $combined )['Cache and JavaScript optimization'], 'An identified combined file must not invent a website key.' );
+check( 'problem' === findings( str_replace( 'example1234', 'different123', $cached ) )['Website key'], 'A real key mismatch in a local cache URL must still fail.' );
+foreach ( array( 'https://evil.test', 'https://example.test.evil.test', 'https://example.test:444', 'https://user@example.test', 'https://example.test@evil.test' ) as $host ) {
+    check( 'problem' === findings( str_replace( 'https://example.test', $host, $cached ) )['Website key'], 'A cache marker/path must not make an untrusted origin acceptable: ' . $host );
+}
+foreach ( array( '//evil.test/wp-content/cache/min/1/client_data/example1234/script.js', '/\\evil.test/wp-content/cache/min/1/client_data/example1234/script.js', 'data:text/javascript,example1234' ) as $src ) {
+    check( 'problem' === findings( '<script id="cookieyes" src="' . $src . '"></script>' )['Website key'], 'A non-local source must not be accepted as a relative cache URL.' );
+}
+$foreign_with_hint = str_replace( 'src="https://cdn-cookieyes.com', 'data-src="https://cdn-cookieyes.com', $cmp );
+$foreign_with_hint = str_replace( '<script ', '<script src="https://evil.test/script.js" ', $foreign_with_hint );
+check( 'problem' === findings( $foreign_with_hint )['Website key'], 'A delayed CDN hint must not validate an active foreign script URL.' );
+$query_hint = '<script id="cookieyes" data-minify="1" src="https://evil.test/script.js?original=https://cdn-cookieyes.com/client_data/example1234/script.js"></script>';
+check( 'problem' === findings( $query_hint )['Website key'], 'A vendor URL hidden in a foreign query must not validate the source.' );
+$delayed = str_replace( ' src=', ' type="text/rocketlazyloadscript" data-rocket-src=', $cmp );
+check( 'problem' === findings( $delayed )['Cache and JavaScript optimization'] && 'problem' === findings( $delayed )['Loading attributes and placement'], 'Current WP Rocket delayed-source markup was missed.' );
+check( 'problem' === findings( str_replace( 'example1234', 'different123', $delayed ) )['Website key'], 'A real key mismatch must remain a problem with delayed loading.' );
+check( false !== strpos( detail( $delayed, 'Cache and JavaScript optimization' ), 'Delay JavaScript execution → Excluded JavaScript Files' ), 'Delay-specific exclusion instructions are missing.' );
+$deferred = str_replace( '<script ', '<script data-rocket-defer defer ', $cmp );
+check( 'problem' === findings( $deferred )['Cache and JavaScript optimization'] && 'problem' === findings( $deferred )['Loading attributes and placement'], 'WP Rocket defer was missed.' );
+check( false !== strpos( detail( $deferred, 'Cache and JavaScript optimization' ), 'Load JavaScript deferred → Excluded JavaScript Files' ), 'Defer-specific exclusion instructions are missing.' );
+$cached_delayed = str_replace( ' src=', ' data-rocket-src=', str_replace( 'type="text/javascript"', 'type="text/rocketlazyloadscript"', $cached ) );
+check( 'unknown' === findings( $cached_delayed )['Website key'] && 'problem' === findings( $cached_delayed )['Loading attributes and placement'], 'Cached and delayed scripts must retain both findings.' );
+check( false !== strpos( detail( $cached_delayed, 'Cache and JavaScript optimization' ), 'domain-based delay/defer exclusions do not match a locally hosted URL' ), 'Combined minification/delay must explain why the original CDN domain needs restoring.' );
+check( 'problem' === findings( $cached . $cmp )['CookieYes installation'] && 'problem' === findings( $cached . $cmp )['Cache and JavaScript optimization'], 'Optimization and duplicate installation findings must coexist.' );
+check( 'unknown' === findings( '' )['Cache and JavaScript optimization'], 'A missing tag cannot pass optimization checks.' );
+$relative_copy = str_replace( 'https://example.test', '', $cached );
+foreach ( array( 'https://untrusted.example/', '//untrusted.example/', 'https://example.test:444/' ) as $base ) {
+    check( 'problem' === findings( '<base href="' . $base . '">' . $relative_copy )['Website key'], 'A base href must not disguise an external relative script as a local copy.' );
+    check( 'unknown' === findings( '<base href="' . $base . '">' . $cached )['Website key'], 'An absolute local URL must be unaffected by a base href.' );
+}
+foreach ( array( '', '/assets/', 'assets/', 'https://example.test/assets/' ) as $base ) {
+    check( 'unknown' === findings( '<base href="' . $base . '">' . $relative_copy )['Website key'], 'A same-origin or empty base must preserve local-copy detection.' );
+}
+check( 'unknown' === findings( '<base target="_blank"><base href="/"><base href="https://untrusted.example/">' . $relative_copy )['Website key'], 'Only the first base with href controls URL resolution.' );
+check( 'unknown' === findings( '<template><base href="https://untrusted.example/"></template>' . $relative_copy )['Website key'], 'An inert base href must not control script origins.' );
+$relative_vendor = '<base href="https://cdn-cookieyes.com/client_data/example1234/"><script id="cookieyes" src="script.js"></script>';
+check( 'pass' === findings( $relative_vendor )['Website key'] && 'pass' === findings( $relative_vendor )['Loading attributes and placement'], 'A relative source must resolve against its CDN base URL.' );
+check( 'problem' === findings( str_replace( 'example1234', 'different123', $relative_vendor ) )['Website key'], 'A mismatched key from a resolved CDN URL must still fail.' );
+$http_base = '<base href="http://example.test/">' . $relative_copy;
+check( 'problem' === findings( $http_base )['Loading attributes and placement'] && false !== strpos( detail( $http_base, 'Loading attributes and placement' ), 'mixed content' ), 'An HTTP base must expose mixed-content loading on an HTTPS page.' );
+check( 'problem' === findings( '<base href="http://example.test/">' . str_replace( 'https://cdn-cookieyes.com', '//cdn-cookieyes.com', $cmp ) )['Loading attributes and placement'], 'Protocol-relative sources inherit the base scheme, not the page scheme.' );
+check( 'problem' === findings( str_replace( 'https://example.test', 'http://example.test', $cached ) )['Loading attributes and placement'], 'An explicit HTTP local cache copy must still fail mixed-content checks.' );
+foreach ( array( '<base href="https://untrusted.example\\path/">', '<base href="https://untrusted.example/">' ) as $base ) {
+    check( 'problem' === findings( $base . $relative_copy )['Website key'], 'An unsafe or foreign base must never validate a relative local key.' );
+}
+foreach ( array( str_replace( '<script ', '<script defer ', $cmp ), str_replace( ' src=', ' type="litespeed/javascript" data-src=', $cmp ), str_replace( ' src=', ' type="pmdelayedscript" data-src=', $cmp ), $local_copy ) as $non_rocket ) {
+    $instructions = detail( $non_rocket, 'Cache and JavaScript optimization' );
+    check( false !== strpos( $instructions, 'If WP Rocket is used' ) && false === strpos( $instructions, 'In WP Rocket →' ), 'Non-Rocket sources must get conditional WP Rocket instructions.' );
+    check( false === strpos( $instructions, 'Clearing caches alone recreates' ), 'A manual copy or non-minification marker must not imply cache regeneration.' );
+}
+$external_copy = str_replace( 'https://example.test', 'https://static.example-cdn.test', $cached );
+check( 'problem' === findings( $external_copy )['Website key'] && 'problem' === findings( $external_copy )['Cache and JavaScript optimization'], 'An optimized external CDN must remain an untrusted source.' );
+check( 'pass' === findings( $external_copy )['Loading attributes and placement'], 'Source trust must not imply wrong loading attributes or placement.' );
+check( 'problem' === findings( str_replace( '<script ', '<script defer ', $external_copy ) )['Loading attributes and placement'], 'An external copy with actual defer must still fail loading checks.' );
+check( 'problem' === findings( '', $external_copy )['Loading attributes and placement'], 'An external copy outside head must still fail placement checks.' );
+$hidden_combined = '<script data-minify="1" src="/wp-content/cache/min/1/combined-example.js"></script>';
+check( 'problem' === findings( $hidden_combined )['CookieYes installation'] && 'unknown' === findings( $hidden_combined )['Cache and JavaScript optimization'], 'A combined file cannot prove a CookieYes installation.' );
+check( false !== strpos( detail( $hidden_combined, 'CookieYes installation' ), 'Combination may have hidden' ) && false !== strpos( detail( $hidden_combined, 'CookieYes installation' ), 'If WP Rocket is used' ), 'The first missing-tag finding must explain possible combination and exclusions.' );
+check( false !== strpos( detail( $hidden_combined, 'Cache and JavaScript optimization' ), 'does not prove CookieYes is inside' ), 'A combined-file hint must state the limit of the evidence.' );
+foreach ( array( '<!--' . $hidden_combined . '-->', '<template>' . $hidden_combined . '</template>', str_replace( '<script ', '<script type="application/ld+json" ', $hidden_combined ) ) as $inert_combined ) {
+    check( false === strpos( detail( $inert_combined, 'CookieYes installation' ), 'optimized JavaScript is present' ), 'An inert or commented optimizer marker must not affect missing-tag guidance.' );
+}
 check( 'problem' === findings( $gtm . $cmp )['Google script order'], 'Early GTM was missed.' );
 check( 'problem' === findings( $gtm )['CookieYes installation'], 'Missing CMP was missed.' );
 check( 'problem' === findings( $cmp . $cmp )['CookieYes installation'], 'Duplicate CMP was missed.' );

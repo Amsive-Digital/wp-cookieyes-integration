@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- Identify local CookieYes script copies and WP Rocket-style minification, delay and defer in a separate cache/optimization finding with specific exclusion and cache-clearing instructions.
+- Distinguish an unverifiable key in an optimized copy from an actual key mismatch or untrusted script source, while retaining loading and placement checks.
+- Invalidate older diagnostic reports and cover optimization cases with synthetic HTML fixtures.
+- Resolve relative script URLs against the first active HTML base href before checking source trust and mixed content.
+- Keep WP Rocket instructions conditional, separate source trust from loading attributes, and explain possible combination when optimization hides the installation tag.
+
 ## 0.3.0
 
 - Flag mixed-content and nomodule CookieYes scripts, and distinguish public login widgets from full WordPress login pages.

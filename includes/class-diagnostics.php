@@ -7,7 +7,7 @@ defined( 'ABSPATH' ) || exit;
 final class Diagnostics {
     const ACTION = 'amsive_cookieyes_check';
     const LIMIT = 1048576;
-    const REPORT_VERSION = 2;
+    const REPORT_VERSION = 4;
 
     private static function item( $status, $title, $detail ) {
         return array( 'status' => $status, 'title' => $title, 'detail' => $detail );
@@ -74,6 +74,74 @@ final class Diagnostics {
         return '';
     }
 
+    /** Resolve URL references without fetching them; reject ambiguous URL spellings. */
+    private static function source_url( $src, $base_url ) {
+        if ( '' === $src || preg_match( '~[\\\\\x00-\x20]~', $src ) ) { return ''; }
+        $source = wp_parse_url( $src );
+        if ( ! is_array( $source ) ) { return ''; }
+        if ( isset( $source['scheme'] ) ) { return $src; }
+        $base = wp_parse_url( $base_url );
+        if ( ! is_array( $base ) || ! isset( $base['scheme'], $base['host'] ) || ! in_array( strtolower( $base['scheme'] ), array( 'http', 'https' ), true ) || isset( $base['user'] ) || isset( $base['pass'] ) || preg_match( '~[\\\\\x00-\x20]~', $base_url ) ) { return ''; }
+        if ( 0 === strpos( $src, '//' ) ) { return $base['scheme'] . ':' . $src; }
+        $origin = $base['scheme'] . '://' . $base['host'] . ( isset( $base['port'] ) ? ':' . $base['port'] : '' );
+        if ( '/' === $src[0] ) { return $origin . $src; }
+        $path = isset( $base['path'] ) ? $base['path'] : '/';
+        if ( isset( $source['path'] ) && '' !== $source['path'] ) { $path = substr( $path, 0, strrpos( $path, '/' ) + 1 ); }
+        return $origin . $path . $src;
+    }
+
+    /** Recognize local copies without treating another host's path as a trusted key. */
+    private static function local_source( $src, $page_url ) {
+        if ( ! $src ) { return false; }
+        $page = wp_parse_url( $page_url );
+        if ( ! is_array( $page ) || ! isset( $page['scheme'], $page['host'] ) ) { return false; }
+        $source = wp_parse_url( $src );
+        if ( ! is_array( $source ) || ! isset( $source['scheme'], $source['host'] ) || isset( $source['user'] ) || isset( $source['pass'] ) ) { return false; }
+        $source_port = isset( $source['port'] ) ? $source['port'] : ( 'https' === strtolower( $source['scheme'] ) ? 443 : 80 );
+        $page_port = isset( $page['port'] ) ? $page['port'] : ( 'https' === strtolower( $page['scheme'] ) ? 443 : 80 );
+        return in_array( strtolower( $source['scheme'] ), array( 'http', 'https' ), true ) && strtolower( $source['scheme'] ) === strtolower( $page['scheme'] ) && strtolower( $source['host'] ) === strtolower( $page['host'] ) && $source_port === $page_port;
+    }
+
+    private static function minification_marker( $node, $src ) {
+        return '1' === $node->getAttribute( 'data-minify' ) || (bool) preg_match( '~(?:^|/)cache/min/[0-9]+/~i', (string) wp_parse_url( $src, PHP_URL_PATH ) );
+    }
+
+    private static function optimization_finding( $tags, $page_minified ) {
+        if ( ! $tags ) {
+            return self::item( 'unknown', __( 'Cache and JavaScript optimization', 'cookieyes-integration' ), $page_minified ? __( 'Optimized JavaScript was found, but no identifiable CookieYes tag remains. Combination may have hidden it; this does not prove CookieYes is inside a combined file. Inspect the optimizer exclusions. If WP Rocket is used, add cdn-cookieyes.com under File Optimization → JavaScript → Excluded JavaScript Files (minification/combination), save, clear WP Rocket and hosting/page caches, then rerun Check integration.', 'cookieyes-integration' ) : __( 'No identifiable CookieYes tag is available to inspect for optimization. Combination or a custom loader can hide it; inspect the original page and optimizer settings.', 'cookieyes-integration' ) );
+        }
+        $rewritten = false;
+        $minified = false;
+        $delayed = false;
+        $deferred = false;
+        foreach ( $tags as $tag ) {
+            $rewritten = $rewritten || $tag['local'];
+            $minified = $minified || $tag['minified'];
+            $delayed = $delayed || $tag['delayed'];
+            $deferred = $deferred || $tag['deferred'];
+        }
+        $details = array();
+        if ( $rewritten || $minified ) {
+            $details[] = $minified ? __( 'A WP Rocket-style cache/min URL or minification marker was found on CookieYes. WP Rocket can download external JavaScript and replace its CDN URL with a locally hosted optimized copy.', 'cookieyes-integration' ) : __( 'The CookieYes tag points to a locally hosted copy instead of the original CDN URL. An optimizer may have rewritten or combined it; HTML cannot verify the copy contents or identify the tool.', 'cookieyes-integration' );
+            $details[] = __( 'Restore the original CookieYes CDN URL and exclude it from the responsible optimizer, if any. If WP Rocket is used, open WP Rocket → File Optimization → JavaScript → Excluded JavaScript Files (minification/combination) and add cdn-cookieyes.com.', 'cookieyes-integration' );
+            if ( $minified ) { $details[] = __( 'Clearing caches alone recreates optimized files while the responsible optimization remains enabled.', 'cookieyes-integration' ); }
+        }
+        if ( $delayed ) {
+            $details[] = __( 'Delayed CookieYes loading was detected. Exclude it from the responsible script loader. If WP Rocket is used, add cdn-cookieyes.com under File Optimization → JavaScript → Delay JavaScript execution → Excluded JavaScript Files.', 'cookieyes-integration' );
+        }
+        if ( $deferred ) {
+            $details[] = __( 'Deferred CookieYes loading was detected. Remove defer from the tag or exclude it in the responsible optimizer. If WP Rocket is used, add cdn-cookieyes.com under File Optimization → JavaScript → Load JavaScript deferred → Excluded JavaScript Files.', 'cookieyes-integration' );
+        }
+        if ( ! $details ) {
+            return self::item( 'pass', __( 'Cache and JavaScript optimization', 'cookieyes-integration' ), __( 'No recognized local copy, minification marker or delay/defer was found on the identified CookieYes tags. This HTML check does not verify script contents or browser execution.', 'cookieyes-integration' ) );
+        }
+        if ( ( $rewritten || $minified ) && ( $delayed || $deferred ) ) {
+            $details[] = __( 'Restore the original CDN URL first: domain-based delay/defer exclusions do not match a locally hosted URL.', 'cookieyes-integration' );
+        }
+        $details[] = __( 'Save changes, clear WP Rocket (if used) and hosting/page caches (for example, WP Engine), then rerun Check integration.', 'cookieyes-integration' );
+        return self::item( 'problem', __( 'Cache and JavaScript optimization', 'cookieyes-integration' ), implode( ' ', $details ) );
+    }
+
     /** Pure HTML analysis; no JS evaluation, HTTP requests or site changes. */
     public static function analyze( $html, $settings, $page_url = null ) {
         if ( ! trim( $html ) ) {
@@ -107,35 +175,62 @@ final class Diagnostics {
                 return array( self::item( 'unknown', __( 'Public homepage', 'cookieyes-integration' ), __( 'A WordPress login page was returned. Make the homepage accessible to an anonymous request before checking integration.', 'cookieyes-integration' ) ) );
             }
         }
-        $secure_page = 'https' === strtolower( (string) wp_parse_url( null === $page_url ? home_url( '/' ) : $page_url, PHP_URL_SCHEME ) );
+        $page_url = null === $page_url ? home_url( '/' ) : $page_url;
+        $base_url = $page_url;
+        // The first non-inert base href controls relative script URLs, including /root paths.
+        foreach ( $doc->getElementsByTagName( 'base' ) as $base ) {
+            if ( ! self::inert( $base ) && $base->hasAttribute( 'href' ) ) {
+                $href = trim( $base->getAttribute( 'href' ) );
+                $base_url = '' === $href ? $page_url : self::source_url( $href, $page_url );
+                break;
+            }
+        }
+        $secure_page = 'https' === strtolower( (string) wp_parse_url( $page_url, PHP_URL_SCHEME ) );
         $cookieyes = array();
         $trackers = array();
         $legacy = false;
         $dynamic = false;
         $uncertain_order = false;
+        $page_minified = false;
         $position = 0;
         foreach ( $doc->getElementsByTagName( 'script' ) as $node ) {
             ++$position;
             if ( self::inert( $node ) ) { continue; }
-            $src = trim( $node->getAttribute( 'src' ) );
+            $raw_src = trim( $node->getAttribute( 'src' ) );
+            $has_src = '' !== $raw_src;
+            $src = self::source_url( $raw_src, $base_url );
             $key = self::vendor_key( $src );
-            $delayed_src = $node->getAttribute( 'data-src' );
-            if ( ! $delayed_src ) { $delayed_src = $node->getAttribute( 'data-rocket-src' ); }
+            $raw_delayed_src = trim( $node->getAttribute( 'data-src' ) );
+            if ( ! $raw_delayed_src ) { $raw_delayed_src = trim( $node->getAttribute( 'data-rocket-src' ) ); }
+            $delayed_src = self::source_url( $raw_delayed_src, $base_url );
             $delayed_key = self::vendor_key( $delayed_src );
-            if ( $key || $delayed_key || 'cookieyes' === $node->getAttribute( 'id' ) ) {
+            $source = $has_src ? $src : $delayed_src;
+            $minified = self::minification_marker( $node, $source );
+            if ( self::executable( $node ) && $minified ) { $page_minified = true; }
+            $local = self::local_source( $source, $page_url );
+            $local_key = '';
+            if ( $local && preg_match( '~(?:^|/)client_data/([A-Za-z0-9_-]+)/script\.js$~i', (string) wp_parse_url( $source, PHP_URL_PATH ), $m ) ) { $local_key = $m[1]; }
+            if ( $key || $delayed_key || $local_key || 'cookieyes' === $node->getAttribute( 'id' ) ) {
+                $delayed = ( ! $has_src && '' !== $raw_delayed_src ) || (bool) preg_match( '~^(?:text/)?(?:rocketlazyloadscript|litespeed/javascript|pmdelayedscript)$~i', trim( $node->getAttribute( 'type' ) ) );
                 $cookieyes[] = array(
-                    'key' => $key ? $key : $delayed_key,
+                    'key' => $key ? $key : ( $local_key ? $local_key : $delayed_key ),
+                    'vendor' => (bool) $key || ( ! $has_src && (bool) $delayed_key ),
+                    'local' => $local,
+                    'minified' => $minified,
+                    'delayed' => $delayed,
+                    'deferred' => $node->hasAttribute( 'defer' ),
                     'position' => $position,
                     'head' => 'head' === strtolower( $node->parentNode->nodeName ),
-                    'mixed_content' => $secure_page && 0 === stripos( $src, 'http://' ),
-                    'blocking' => $key && ! ( $secure_page && 0 === stripos( $src, 'http://' ) ) && ! $node->hasAttribute( 'nomodule' ) && self::executable( $node ) && 'module' !== strtolower( trim( $node->getAttribute( 'type' ) ) ) && ! $node->hasAttribute( 'async' ) && ! $node->hasAttribute( 'defer' ) && ( ! $node->hasAttribute( 'data-cfasync' ) || 'false' === strtolower( $node->getAttribute( 'data-cfasync' ) ) ),
+                    'mixed_content' => $secure_page && 0 === stripos( $source, 'http://' ),
+                    // Source trust is checked separately; a different host does not imply defer or wrong placement.
+                    'blocking' => $has_src && $src && wp_parse_url( $src, PHP_URL_HOST ) && in_array( strtolower( (string) wp_parse_url( $src, PHP_URL_SCHEME ) ), array( 'http', 'https' ), true ) && ! $delayed && ! ( $secure_page && 0 === stripos( $src, 'http://' ) ) && ! $node->hasAttribute( 'nomodule' ) && self::executable( $node ) && 'module' !== strtolower( trim( $node->getAttribute( 'type' ) ) ) && ! $node->hasAttribute( 'async' ) && ! $node->hasAttribute( 'defer' ) && ( ! $node->hasAttribute( 'data-cfasync' ) || 'false' === strtolower( $node->getAttribute( 'data-cfasync' ) ) ),
                 );
             }
             if ( preg_match( '~^(?:https?:)?//(?:www\.)?googletagmanager\.com/(?:gtm\.js|gtag/js)(?:[?#]|$)~i', $delayed_src ) || ( ! self::executable( $node ) && preg_match( '~rocketlazyloadscript|litespeed/javascript|pmdelayedscript~i', $node->getAttribute( 'type' ) ) ) ) {
                 $uncertain_order = true;
             }
             if ( ! self::executable( $node ) ) { continue; }
-            $code = $src ? '' : $node->textContent;
+            $code = $has_src ? '' : $node->textContent;
             if ( preg_match( '~^(?:https?:)?//(?:consent\.cookiebot\.com|consentcdn\.cookiebot\.com)/~i', $src ) ) { $legacy = true; }
             $name = '';
             if ( preg_match( '~^(?:https?:)?//(?:www\.)?googletagmanager\.com/(gtm\.js|gtag/js)(?:[?#]|$)~i', $src, $m ) ) {
@@ -151,10 +246,21 @@ final class Diagnostics {
         $items = array();
         $items[] = self::item( $settings['enabled'] && Settings::valid_key( $settings['website_key'] ) ? 'pass' : 'problem', __( 'Saved plugin configuration', 'cookieyes-integration' ), $settings['enabled'] && Settings::valid_key( $settings['website_key'] ) ? __( 'Output is enabled and the saved website key has a valid format.', 'cookieyes-integration' ) : __( 'Save a valid website key and enable CookieYes when the site is ready. This check does not change settings.', 'cookieyes-integration' ) );
         $count = count( $cookieyes );
-        $items[] = self::item( 1 === $count ? 'pass' : 'problem', __( 'CookieYes installation', 'cookieyes-integration' ), 1 === $count ? __( 'One CookieYes installation tag was found in the returned HTML.', 'cookieyes-integration' ) : ( $count ? __( 'Multiple CookieYes tags were found. Keep one installation path and remove duplicate snippets or plugins, then clear the page cache.', 'cookieyes-integration' ) : __( 'No direct CookieYes tag was found. Check activation, saved settings, the theme wp_head() hook and page cache. A GTM-only installation requires a separate browser check.', 'cookieyes-integration' ) ) );
+        $missing = __( 'No direct CookieYes tag was found. Check activation, saved settings, the theme wp_head() hook and page cache. A GTM-only installation requires a separate browser check.', 'cookieyes-integration' );
+        if ( $page_minified ) { $missing = __( 'No direct CookieYes tag was found and optimized JavaScript is present. Combination may have hidden the tag; inspect optimizer exclusions before changing the saved key. If WP Rocket is used, add cdn-cookieyes.com under File Optimization → JavaScript → Excluded JavaScript Files (minification/combination), save, clear WP Rocket and hosting/page caches, then rerun Check integration. Also check activation, saved settings and the theme wp_head() hook.', 'cookieyes-integration' ); }
+        $items[] = self::item( 1 === $count ? 'pass' : 'problem', __( 'CookieYes installation', 'cookieyes-integration' ), 1 === $count ? __( 'One CookieYes installation tag was found in the returned HTML.', 'cookieyes-integration' ) : ( $count ? __( 'Multiple CookieYes tags were found. Keep one installation path and remove duplicate snippets or plugins, then clear the page cache.', 'cookieyes-integration' ) : $missing ) );
+        $items[] = self::optimization_finding( $cookieyes, $page_minified );
         if ( 1 === $count ) {
             $tag = $cookieyes[0];
-            $items[] = self::item( $tag['key'] === $settings['website_key'] && '' !== $tag['key'] ? 'pass' : 'problem', __( 'Website key', 'cookieyes-integration' ), $tag['key'] === $settings['website_key'] && '' !== $tag['key'] ? __( 'The tag uses the saved website key and the expected CookieYes CDN URL.', 'cookieyes-integration' ) : __( 'The tag does not match the saved key or expected CDN URL. Remove an old snippet and clear the page cache.', 'cookieyes-integration' ) );
+            if ( ! $tag['vendor'] && ! $tag['local'] ) {
+                $items[] = self::item( 'problem', __( 'Website key', 'cookieyes-integration' ), __( 'The tag does not use the expected CookieYes CDN URL. Its script source is missing or untrusted, so the saved key cannot be verified. Restore the original CookieYes installation URL; do not assume the saved key is wrong.', 'cookieyes-integration' ) );
+            } elseif ( '' !== $tag['key'] && $tag['key'] !== $settings['website_key'] ) {
+                $items[] = self::item( 'problem', __( 'Website key', 'cookieyes-integration' ), __( 'The website key visible in the script URL differs from the saved key. Remove an old snippet or correct the saved configuration, then clear page caches. If the URL was optimized, fix the optimization exclusions too.', 'cookieyes-integration' ) );
+            } elseif ( $tag['local'] ) {
+                $items[] = self::item( 'unknown', __( 'Website key', 'cookieyes-integration' ), '' !== $tag['key'] ? __( 'The key in the local copy URL matches the saved key, but the original CDN source and copy contents cannot be verified. Resolve the cache/optimization finding and rerun; this does not show that the saved key is wrong.', 'cookieyes-integration' ) : __( 'A local copy or combined script hides the original website key. Resolve the cache/optimization finding and rerun before changing the saved key.', 'cookieyes-integration' ) );
+            } else {
+                $items[] = self::item( 'pass', __( 'Website key', 'cookieyes-integration' ), __( 'The tag uses the saved website key and the expected CookieYes CDN URL.', 'cookieyes-integration' ) );
+            }
             $items[] = self::item( $tag['blocking'] && $tag['head'] ? 'pass' : 'problem', __( 'Loading attributes and placement', 'cookieyes-integration' ), $tag['blocking'] && $tag['head'] ? __( 'The tag is in the head without detected async, defer, module, nomodule or delayed-source loading.', 'cookieyes-integration' ) : ( $tag['mixed_content'] ? __( 'The CookieYes script uses HTTP on an HTTPS page and can be blocked as mixed content. Use the HTTPS CookieYes CDN URL, then clear the page cache.', 'cookieyes-integration' ) : __( 'Place the direct CookieYes tag in the head without nomodule and exclude it from script delay, async/defer, module conversion and script combination.', 'cookieyes-integration' ) ) );
             $earlier = array();
             foreach ( $trackers as $tracker ) {
