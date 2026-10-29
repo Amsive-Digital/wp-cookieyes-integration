@@ -7,13 +7,14 @@ defined( 'ABSPATH' ) || exit;
 final class Diagnostics {
     const ACTION = 'amsive_cookieyes_check';
     const LIMIT = 1048576;
+    const REPORT_VERSION = 2;
 
     private static function item( $status, $title, $detail ) {
         return array( 'status' => $status, 'title' => $title, 'detail' => $detail );
     }
 
     private static function context() {
-        return hash( 'sha256', home_url( '/' ) . COOKIEYES_INTEGRATION_VERSION . serialize( Settings::get() ) );
+        return hash( 'sha256', home_url( '/' ) . COOKIEYES_INTEGRATION_VERSION . self::REPORT_VERSION . serialize( Settings::get() ) );
     }
 
     private static function cache_key() {
@@ -47,7 +48,7 @@ final class Diagnostics {
             $report['items'][] = self::item( 'unknown', __( 'Homepage response', 'cookieyes-integration' ), sprintf( __( 'Cannot inspect this response (HTTP %d). Expected HTML up to 1 MiB. Redirects are not followed; check the configured homepage URL, access restrictions and response size.', 'cookieyes-integration' ), $code ) );
             return $report;
         }
-        $report['items'] = self::analyze( $body, Settings::get() );
+        $report['items'] = self::analyze( $body, Settings::get(), $url );
         return $report;
     }
 
@@ -74,7 +75,7 @@ final class Diagnostics {
     }
 
     /** Pure HTML analysis; no JS evaluation, HTTP requests or site changes. */
-    public static function analyze( $html, $settings ) {
+    public static function analyze( $html, $settings, $page_url = null ) {
         if ( ! trim( $html ) ) {
             return array( self::item( 'unknown', __( 'Homepage HTML', 'cookieyes-integration' ), __( 'The homepage returned empty HTML. Check access and rerun.', 'cookieyes-integration' ) ) );
         }
@@ -92,11 +93,21 @@ final class Diagnostics {
         if ( ! $loaded || ! $doc->getElementsByTagName( 'head' )->length || ! $doc->getElementsByTagName( 'body' )->length ) {
             return array( self::item( 'unknown', __( 'Homepage HTML', 'cookieyes-integration' ), __( 'A complete HTML page could not be identified. Check for an access or security challenge and rerun.', 'cookieyes-integration' ) ) );
         }
+        // A public page may embed wp_login_form() or password-protected content.
+        // Only reject the recognizable WordPress login document, not a form by itself.
+        $body = $doc->getElementsByTagName( 'body' )->item( 0 );
+        $login_body = 1 === preg_match( '/(?:^|\s)login(?:\s|$)/', $body->getAttribute( 'class' ) );
         foreach ( $doc->getElementsByTagName( 'form' ) as $form ) {
-            if ( in_array( $form->getAttribute( 'id' ), array( 'loginform', 'passwordform' ), true ) || false !== strpos( $form->getAttribute( 'class' ), 'post-password-form' ) ) {
-                return array( self::item( 'unknown', __( 'Public homepage', 'cookieyes-integration' ), __( 'A login or password form was returned. Make the homepage accessible to an anonymous request before checking integration.', 'cookieyes-integration' ) ) );
+            $login_container = false;
+            for ( $parent = $form->parentNode; $parent instanceof \DOMElement; $parent = $parent->parentNode ) {
+                if ( 'login' === $parent->getAttribute( 'id' ) ) { $login_container = true; break; }
+            }
+            $action_path = (string) wp_parse_url( $form->getAttribute( 'action' ), PHP_URL_PATH );
+            if ( $login_body && $login_container && 'loginform' === $form->getAttribute( 'id' ) && preg_match( '~(?:^|/)wp-login\.php$~', $action_path ) ) {
+                return array( self::item( 'unknown', __( 'Public homepage', 'cookieyes-integration' ), __( 'A WordPress login page was returned. Make the homepage accessible to an anonymous request before checking integration.', 'cookieyes-integration' ) ) );
             }
         }
+        $secure_page = 'https' === strtolower( (string) wp_parse_url( null === $page_url ? home_url( '/' ) : $page_url, PHP_URL_SCHEME ) );
         $cookieyes = array();
         $trackers = array();
         $legacy = false;
@@ -116,7 +127,8 @@ final class Diagnostics {
                     'key' => $key ? $key : $delayed_key,
                     'position' => $position,
                     'head' => 'head' === strtolower( $node->parentNode->nodeName ),
-                    'blocking' => $key && self::executable( $node ) && 'module' !== strtolower( trim( $node->getAttribute( 'type' ) ) ) && ! $node->hasAttribute( 'async' ) && ! $node->hasAttribute( 'defer' ) && ( ! $node->hasAttribute( 'data-cfasync' ) || 'false' === strtolower( $node->getAttribute( 'data-cfasync' ) ) ),
+                    'mixed_content' => $secure_page && 0 === stripos( $src, 'http://' ),
+                    'blocking' => $key && ! ( $secure_page && 0 === stripos( $src, 'http://' ) ) && ! $node->hasAttribute( 'nomodule' ) && self::executable( $node ) && 'module' !== strtolower( trim( $node->getAttribute( 'type' ) ) ) && ! $node->hasAttribute( 'async' ) && ! $node->hasAttribute( 'defer' ) && ( ! $node->hasAttribute( 'data-cfasync' ) || 'false' === strtolower( $node->getAttribute( 'data-cfasync' ) ) ),
                 );
             }
             if ( preg_match( '~^(?:https?:)?//(?:www\.)?googletagmanager\.com/(?:gtm\.js|gtag/js)(?:[?#]|$)~i', $delayed_src ) || ( ! self::executable( $node ) && preg_match( '~rocketlazyloadscript|litespeed/javascript|pmdelayedscript~i', $node->getAttribute( 'type' ) ) ) ) {
@@ -143,7 +155,7 @@ final class Diagnostics {
         if ( 1 === $count ) {
             $tag = $cookieyes[0];
             $items[] = self::item( $tag['key'] === $settings['website_key'] && '' !== $tag['key'] ? 'pass' : 'problem', __( 'Website key', 'cookieyes-integration' ), $tag['key'] === $settings['website_key'] && '' !== $tag['key'] ? __( 'The tag uses the saved website key and the expected CookieYes CDN URL.', 'cookieyes-integration' ) : __( 'The tag does not match the saved key or expected CDN URL. Remove an old snippet and clear the page cache.', 'cookieyes-integration' ) );
-            $items[] = self::item( $tag['blocking'] && $tag['head'] ? 'pass' : 'problem', __( 'Loading attributes and placement', 'cookieyes-integration' ), $tag['blocking'] && $tag['head'] ? __( 'The tag is in the head without detected async, defer, module or delayed-source loading.', 'cookieyes-integration' ) : __( 'Place the direct CookieYes tag in the head and exclude it from script delay, async/defer, module conversion and script combination.', 'cookieyes-integration' ) );
+            $items[] = self::item( $tag['blocking'] && $tag['head'] ? 'pass' : 'problem', __( 'Loading attributes and placement', 'cookieyes-integration' ), $tag['blocking'] && $tag['head'] ? __( 'The tag is in the head without detected async, defer, module, nomodule or delayed-source loading.', 'cookieyes-integration' ) : ( $tag['mixed_content'] ? __( 'The CookieYes script uses HTTP on an HTTPS page and can be blocked as mixed content. Use the HTTPS CookieYes CDN URL, then clear the page cache.', 'cookieyes-integration' ) : __( 'Place the direct CookieYes tag in the head without nomodule and exclude it from script delay, async/defer, module conversion and script combination.', 'cookieyes-integration' ) ) );
             $earlier = array();
             foreach ( $trackers as $tracker ) {
                 if ( $tracker['position'] < $tag['position'] ) { $earlier[] = $tracker['name']; }

@@ -2,6 +2,8 @@
 
 ## 0.3.0
 
+- Flag mixed-content and nomodule CookieYes scripts, and distinguish public login widgets from full WordPress login pages.
+
 - Show a state-based top notice before checks, during checks and for the main issue; hide it when all HTML checks pass.
 - Display by Amsive beside the installed version.
 

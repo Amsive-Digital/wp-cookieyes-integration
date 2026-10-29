@@ -54,9 +54,19 @@ check( 'problem' === findings( $gtm )['CookieYes installation'], 'Missing CMP wa
 check( 'problem' === findings( $cmp . $cmp )['CookieYes installation'], 'Duplicate CMP was missed.' );
 check( 'problem' === findings( str_replace( 'example1234', 'different123', $cmp ) )['Website key'], 'Wrong key was missed.' );
 check( 'problem' === findings( str_replace( 'https://cdn-cookieyes.com', 'https://evil.test', $cmp ) )['Website key'], 'Foreign host accepted.' );
-foreach ( array( 'async', 'defer', 'type="module"', 'type="text/plain"', 'type="rocketlazyloadscript"', 'data-cfasync="true"' ) as $attr ) {
+foreach ( array( 'async', 'defer', 'nomodule', 'type="module"', 'type="text/plain"', 'type="rocketlazyloadscript"', 'data-cfasync="true"' ) as $attr ) {
     check( 'problem' === findings( str_replace( '<script ', '<script ' . $attr . ' ', $cmp ) . $gtm )['Loading attributes and placement'], 'Unsafe CMP loading missed: ' . $attr );
 }
+$http_cmp = str_replace( 'https://cdn-cookieyes.com', 'http://cdn-cookieyes.com', $cmp );
+check( 'problem' === findings( $http_cmp . $gtm )['Loading attributes and placement'], 'HTTP CMP on HTTPS must not pass as loadable.' );
+check( 'pass' === findings( str_replace( 'https://cdn-cookieyes.com', '//cdn-cookieyes.com', $cmp ) . $gtm )['Loading attributes and placement'], 'Protocol-relative CMP inherits HTTPS and should pass.' );
+$http_page_items = Diagnostics::analyze( page( $http_cmp . $gtm ), $settings, 'http://example.test/' );
+$http_page_status = array_column( $http_page_items, 'status', 'title' );
+check( 'pass' === $http_page_status['Loading attributes and placement'], 'HTTP script on HTTP page must not be incorrectly flagged as mixed content.' );
+$public_login = findings( $cmp . $gtm, '<main><h1>Public homepage</h1><form id="loginform" action="/wp-login.php"><input name="log"></form></main>' );
+check( isset( $public_login['CookieYes installation'] ) && 'pass' === $public_login['CookieYes installation'], 'Public login widget must not prevent integration checks.' );
+$public_password = findings( $cmp . $gtm, '<main><h1>Public homepage</h1><form class="post-password-form" action="/wp-login.php?action=postpass"></form></main>' );
+check( isset( $public_password['CookieYes installation'] ) && 'pass' === $public_password['CookieYes installation'], 'An embedded password form must not reject the entire homepage.' );
 check( 'pass' === findings( str_replace( '<script ', '<script data-cfasync="false" ', $cmp ) . $gtm )['Loading attributes and placement'], 'Rocket Loader exclusion should be accepted.' );
 check( 'problem' === findings( str_replace( ' src=', ' data-src=', $cmp ) )['Loading attributes and placement'], 'Delayed source missed.' );
 check( 'problem' === findings( '', $cmp . $gtm )['Loading attributes and placement'], 'CMP outside head missed.' );
@@ -71,7 +81,7 @@ $inline = '<script>(function(){var x=document.createElement("script");x.src="htt
 check( 'problem' === findings( $inline . $cmp )['Google script order'], 'Inline GTM loader missed.' );
 check( 'problem' === findings( '<script>gtag("config", "G-EXAMPLE");</script>' . $cmp )['Google script order'], 'Early gtag config missed.' );
 check( 'unknown' === Diagnostics::analyze( '', $settings )[0]['status'], 'Empty HTML must not pass.' );
-check( 'unknown' === Diagnostics::analyze( page( '', '<form id="loginform"></form>' ), $settings )[0]['status'], 'Login response must be unverified.' );
+check( 'unknown' === Diagnostics::analyze( '<!doctype html><html><head><title>Log In</title></head><body class="login login-action-login"><div id="login"><form id="loginform" action="/wp-login.php"></form></div></body></html>', $settings )[0]['status'], 'Login response must be unverified.' );
 $http['body'] = page( $cmp . $gtm );
 $report = Diagnostics::run();
 check( 'pass' === $report['items'][0]['status'], 'Fetch did not analyze valid HTML.' );
