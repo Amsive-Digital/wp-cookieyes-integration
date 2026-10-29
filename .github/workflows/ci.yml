@@ -30,6 +30,7 @@ jobs:
           find . -type f -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
           php tests/plugin-contract.php
           php tests/updater-contract.php
+          php tests/diagnostics-contract.php
       - name: Release metadata and package checks
         run: |
           python3 scripts/release.py check
