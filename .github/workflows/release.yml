@@ -38,6 +38,7 @@ jobs:
           php tests/plugin-contract.php
           php tests/updater-contract.php
           php tests/diagnostics-contract.php
+          node tests/consent-contract.js
           python3 tests/release-contract.py
       - name: Publish immutable assets from the checked commit
         run: python3 scripts/publish.py

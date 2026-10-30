@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Initialize Google Consent Mode v2 before the blocking CookieYes loader, denying nonessential consent types and granting security storage with a 2000 ms update wait.
+- Preserve existing queues and gtag functions, avoid repeated or already queued defaults, and provide a developer opt-out for another default owner. CookieYes continues to manage consent updates and saved preferences.
+- Keep disabled, invalid-key and admin requests silent; preserve stored settings and Basic mode behavior without enabling Google tags or URL passthrough.
+- Add executable JavaScript coverage of the emitted initializer alongside PHP, diagnostics and release checks.
+
 ## 0.3.1
 
 - Identify local CookieYes script copies and WP Rocket-style minification, delay and defer in a separate cache/optimization finding with specific exclusion and cache-clearing instructions.

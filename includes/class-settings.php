@@ -88,7 +88,8 @@ final class Settings {
                 </table>
                 <?php submit_button(); ?>
             </form>
-            <p><?php echo esc_html__( 'After saving, clear the relevant page cache and verify the banner and tracking consent in a fresh browser session. Exclude the CookieYes script from script delay, combination, and async/defer optimizations.', 'cookieyes-integration' ); ?></p>
+            <p><?php echo esc_html__( 'After saving, clear the relevant page cache and verify the banner and tracking consent in a fresh browser session. Exclude the CookieYes script and cookieyes-integration-consent-defaults from script delay, combination, and async/defer optimizations.', 'cookieyes-integration' ); ?></p>
+            <p class="description"><?php echo esc_html__( 'This installation sets the initial Google consent state before CookieYes. Enable Support GCM in CookieYes to apply visitor choices. For Basic Consent Mode, keep Allow Google tags to fire before consent off and load Google tags after CookieYes. If another integration already sets consent defaults, have your developer choose one default owner before updating.', 'cookieyes-integration' ); ?></p>
             <p class="description"><?php echo esc_html__( 'Use one CookieYes installation only. Remove duplicate direct snippets, GTM installations or other CookieYes plugins. Tracking hardcoded before wp_head() requires a theme change.', 'cookieyes-integration' ); ?></p>
             <p><a href="https://www.cookieyes.com/documentation/banner-installation-code/" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'CookieYes installation instructions', 'cookieyes-integration' ); ?></a></p>
             <?php Diagnostics::render(); ?>

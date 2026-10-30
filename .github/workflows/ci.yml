@@ -31,6 +31,7 @@ jobs:
           php tests/plugin-contract.php
           php tests/updater-contract.php
           php tests/diagnostics-contract.php
+          node tests/consent-contract.js
       - name: Release metadata and package checks
         run: |
           python3 scripts/release.py check

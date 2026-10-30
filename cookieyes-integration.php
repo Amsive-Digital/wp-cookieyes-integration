@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CookieYes Integration
  * Description: Connect any WordPress site to its CookieYes banner with a site-specific website key.
- * Version: 0.3.1
+ * Version: 0.3.2
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: Amsive
@@ -17,7 +17,7 @@ namespace Amsive\CookieYes;
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'COOKIEYES_INTEGRATION_VERSION', '0.3.1' );
+define( 'COOKIEYES_INTEGRATION_VERSION', '0.3.2' );
 define( 'COOKIEYES_INTEGRATION_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-updater.php';
