@@ -7,6 +7,8 @@ $hooks = array();
 $errors = array();
 $can_manage = true;
 $registered = array();
+$admin_request = false;
+$consent_defaults_enabled = true;
 
 function get_current_user_id() { return 1; }
 function home_url( $path = '' ) { return 'https://example.test/' . ltrim( $path, '/' ); }
@@ -16,7 +18,8 @@ function get_option( $name, $default = false ) { global $saved; return $saved[ $
 function add_action( $hook, $callback, $priority = 10 ) { global $hooks; $hooks[ $hook ][ $priority ][] = $callback; }
 function add_filter( $hook, $callback ) { add_action( $hook, $callback ); }
 function plugin_basename( $file ) { return basename( dirname( $file ) ) . '/' . basename( $file ); }
-function is_admin() { return false; }
+function is_admin() { global $admin_request; return $admin_request; }
+function apply_filters( $hook, $value ) { global $consent_defaults_enabled; return 'cookieyes_integration_consent_defaults_enabled' === $hook ? $consent_defaults_enabled : $value; }
 function current_user_can( $cap ) { global $can_manage; return $can_manage; }
 function __( $s, $domain = '' ) { return $s; }
 function wp_json_encode( $value ) { return json_encode( $value, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); }
@@ -45,6 +48,12 @@ function check( $ok, $message ) {
 }
 function output( $callback ) { ob_start(); $callback(); return ob_get_clean(); }
 function store( $value ) { global $saved; $saved[ Settings::OPTION ] = $value; }
+
+if ( in_array( '--emit-frontend', $argv, true ) ) {
+    store( array( 'website_key' => 'synthetic_test_key', 'enabled' => true ) );
+    echo output( array( new Plugin(), 'render_script' ) );
+    exit;
+}
 
 $settings = new Settings();
 $key = '5cfe4f28d3b2e213a2c75d46'; // Public documentation example, never used as a site installation.
@@ -75,9 +84,17 @@ check( array( 'website_key' => '', 'enabled' => false ) === $settings->sanitize(
 store( $good );
 $plugin = new Plugin();
 $html = output( array( $plugin, 'render_script' ) );
-check( 1 === substr_count( $html, '<script ' ) && false !== strpos( $html, 'https://cdn-cookieyes.com/client_data/' . $key . '/script.js' ), 'Expected one vendor installation tag.' );
+check( 2 === substr_count( $html, '<script ' ) && 1 === substr_count( $html, 'id="cookieyes"' ) && false !== strpos( $html, 'https://cdn-cookieyes.com/client_data/' . $key . '/script.js' ), 'Expected defaults and one vendor installation tag.' );
+check( strpos( $html, "w.gtag('consent', 'default'" ) < strpos( $html, 'id="cookieyes"' ), 'Consent defaults must precede the blocking vendor loader.' );
 check( false === strpos( $html, 'async' ) && false === strpos( $html, 'defer' ), 'The blocking installation tag was changed.' );
 check( '' === output( array( $plugin, 'render_script' ) ), 'Repeated hook invocation duplicated the tag.' );
+$admin_request = true;
+check( '' === output( array( new Plugin(), 'render_script' ) ), 'Admin requests must not emit defaults or vendor scripts.' );
+$admin_request = false;
+$consent_defaults_enabled = false;
+$external_defaults = output( array( new Plugin(), 'render_script' ) );
+check( 1 === substr_count( $external_defaults, '<script ' ) && false !== strpos( $external_defaults, 'id="cookieyes"' ), 'Opting out of defaults must retain the blocking vendor loader.' );
+$consent_defaults_enabled = true;
 foreach ( array( 'bad', array( 'website_key' => array(), 'enabled' => '1' ), array( 'website_key' => '../bad', 'enabled' => true ), array( 'website_key' => $key, 'enabled' => 'yes' ) ) as $bad ) {
     store( $bad );
     check( '' === output( array( new Plugin(), 'render_script' ) ), 'Corrupt stored options must not emit a script.' );

@@ -1,6 +1,6 @@
 # CookieYes Integration
 
-Version **0.3.1** · Author **Amsive** · GPL-2.0-or-later
+Version **0.3.2** · Author **Amsive** · GPL-2.0-or-later
 
 A universal WordPress integration for your CookieYes banner. Each site uses its own website key; no customer names, domains or tracking IDs are embedded in the plugin.
 
@@ -14,11 +14,15 @@ Activation leaves banner output disabled by default. The key input accepts only 
 
 ## Integration
 
-The plugin prints the vendor's blocking script at `wp_head` priority 0. Tracking hardcoded before `wp_head()` still precedes it and needs a theme change. Verify actual HTML and network behavior; ordering alone does not configure consent-aware tags.
+The plugin prints Google Consent Mode v2 defaults, then the vendor's blocking script at `wp_head` priority 0. For Basic Consent Mode, keep this order: **consent defaults → CookieYes → Google gtag/GTM**. Tracking hardcoded before `wp_head()` still precedes it and needs a theme change. Verify actual HTML and network behavior; ordering alone does not configure consent-aware tags.
 
-Use one installation path: this plugin, the official CookieYes plugin, or the official GTM integration. The manual frontend check detects recognized direct snippets in the homepage HTML; it does not remove them. Exclude CookieYes from optimizations that delay or reorder scripts. Sites using CSP must permit the vendor's required script and network connections; this direct tag does not add a CSP nonce.
+When enabled with a valid key, new and existing installations initialize the standard `window.dataLayer` with `ad_storage`, `ad_user_data`, `ad_personalization`, `analytics_storage`, `functionality_storage` and `personalization_storage` denied, `security_storage` granted, and `wait_for_update: 2000`. The wait is a grace period for updates, not permission to track after two seconds. CookieYes must have **Support GCM** enabled; it supplies subsequent updates, including saved visitor preferences. The plugin does not read or rewrite the consent cookie. Keep **Allow Google tags to fire before consent** off for Basic mode; this plugin does not enable Advanced mode, load Google tags, set URL passthrough or change ads data redaction.
 
-Banner design, consent categories, languages, logging and consent rules remain in CookieYes. This plugin does not configure GTM, GA4, Consent Mode, cookie policies or migrations from another consent service.
+The initializer preserves an existing dataLayer and gtag function, and skips its default when it finds a queued `consent/default` arguments command (including region-specific commands). A plain array pushed directly to dataLayer is not treated as a gtag consent command. When another owner supplies region-specific defaults, it must also cover visitors outside those regions as appropriate. Repeated execution does not reset consent. Use one default owner: remove redundant custom default snippets, or disable this plugin's initializer with `add_filter( 'cookieyes_integration_consent_defaults_enabled', '__return_false' );` when another integration owns defaults. Queue inspection cannot discover defaults set later in the page, internally by GTM or another nonstandard queue; audit existing default owners before updating an enabled installation and use the filter in those cases. The filter retains the CookieYes loader. Disabled, invalid-key and admin requests output neither script. No settings migration or enable-state change is required.
+
+Use one installation path: this plugin, the official CookieYes plugin, or the official GTM integration. The manual frontend check detects recognized direct snippets in the homepage HTML; it does not remove them. Exclude both `cookieyes-integration-consent-defaults` and the CookieYes CDN loader from optimizations that delay or reorder scripts. Sites using CSP must permit the inline initializer and vendor's required script and network connections; these tags do not add a CSP nonce.
+
+Banner design, consent categories, languages, logging and consent rules remain in CookieYes. Beyond the initial Consent Mode state, this plugin does not configure GTM, GA4, CookieYes account settings, cookie policies or migrations from another consent service.
 
 ## Frontend integration check
 
@@ -46,6 +50,7 @@ WordPress 6.0+, PHP 7.4+. CI checks PHP 7.4, 8.2 and 8.4. Isolated contract test
 php tests/plugin-contract.php
 php tests/updater-contract.php
 php tests/diagnostics-contract.php
+node tests/consent-contract.js
 python3 tests/release-contract.py
 python3 scripts/release.py check
 python3 scripts/release.py build
@@ -57,6 +62,7 @@ Settings use the WordPress Settings API, capability checks and nonces. On multis
 
 - [CookieYes installation code](https://www.cookieyes.com/documentation/banner-installation-code/)
 - [CookieYes script order](https://www.cookieyes.com/documentation/custom-data-layer/)
+- [CookieYes Google Consent Mode and Basic mode script order](https://www.cookieyes.com/documentation/implementing-google-consent-mode-using-cookieyes/)
 - [WordPress update hooks](https://developer.wordpress.org/reference/hooks/update_plugins_hostname/)
 - [WP Rocket JavaScript minification and combination](https://docs.wp-rocket.me/article/1351-javascript-minify-combine)
 - [WP Rocket external JavaScript exclusions](https://docs.wp-rocket.me/article/39-excluding-external-js-from-concatenation)

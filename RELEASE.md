@@ -7,7 +7,7 @@ The public repository is `Amsive-Digital/wp-cookieyes-integration`. The installa
 1. Start a working branch from current `main`. Keep fixes and small changes in the final version component; use a minor increment for a new feature.
 2. Add a nonempty `## X.Y.Z` entry to `CHANGELOG.md`.
 3. Run `python3 scripts/release.py prepare --version X.Y.Z`. This synchronizes the plugin header, version constant, readme stable tag, and README version.
-4. Run PHP syntax checks, `php tests/plugin-contract.php`, `php tests/updater-contract.php`, and `python3 tests/release-contract.py`.
+4. Run PHP syntax checks, `php tests/plugin-contract.php`, `php tests/updater-contract.php`, `php tests/diagnostics-contract.php`, `node tests/consent-contract.js` (Node.js 18+), and `python3 tests/release-contract.py`.
 5. Commit, push, and open a PR into `main`. Merge only after the protected branch requirements pass. Approval/merge authorization remains a separate delivery decision.
 
 ## Publish

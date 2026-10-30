@@ -3,7 +3,7 @@ Contributors: amsive
 Tags: cookieyes, consent, cookies
 Requires at least: 6.0
 Requires PHP: 7.4
-Stable tag: 0.3.1
+Stable tag: 0.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,6 +16,8 @@ Universal direct CookieYes integration by Amsive. Configure the website key unde
 This plugin connects visitors' browsers to CookieYes at https://cdn-cookieyes.com to load your configured banner. Review CookieYes terms (https://www.cookieyes.com/terms-and-conditions/) and privacy policy (https://www.cookieyes.com/privacy-policy/) before enabling it. No remote script is output until enabled with a valid key. Your site's CookieYes configuration determines subsequent consent processing.
 
 Use one CookieYes installation only. Tracking printed before wp_head() requires a theme change. Exclude CookieYes from optimizations that delay or reorder scripts. Verify consent behavior after integration.
+
+Enabled installations output Google Consent Mode v2 defaults before CookieYes: nonessential types denied, security storage granted and wait_for_update 2000 ms. Enable Support GCM in CookieYes so it updates consent and restores saved choices. For Basic mode, keep Allow Google tags to fire before consent off and load Google tags after CookieYes. Exclude cookieyes-integration-consent-defaults from script delay/reordering too. No Google tag or URL passthrough is enabled by this plugin. Existing default owners can opt out using the cookieyes_integration_consent_defaults_enabled filter; see README.md for limitations and CSP requirements.
 
 == Installation ==
 
@@ -40,6 +42,9 @@ No. Manage consent rules in CookieYes and integrate tracking in the site's theme
 No. Settings are retained for safe reinstall. Remove the amsive_cookieyes_settings option per site if permanent cleanup is required.
 
 == Changelog ==
+
+= 0.3.2 =
+* Add the missing initial Google Consent Mode v2 state before CookieYes, with duplicate guards and a developer opt-out. Preserve site settings and CookieYes-managed updates.
 
 = 0.2.0 =
 * Add GitHub release updates, a version label and a documented protected-branch release process.
