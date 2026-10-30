@@ -11,11 +11,45 @@ final class Plugin {
 
     public function register() {
         add_action( 'wp_head', array( $this, 'render_script' ), 0 );
+        // Keep optimizer compatibility in the plugin, independent of the active theme.
+        add_filter( 'rocket_minify_excluded_external_js', array( $this, 'exclude_vendor_script' ) );
+        add_filter( 'rocket_exclude_defer_js', array( $this, 'exclude_vendor_script' ) );
+        add_filter( 'rocket_delay_js_exclusions', array( $this, 'exclude_delayed_scripts' ) );
+        add_filter( 'rocket_excluded_inline_js_content', array( $this, 'exclude_inline_defaults' ) );
         add_action( 'wp_ajax_amsive_cookieyes_server_check', array( Diagnostics::class, 'server_check' ) );
         add_action( 'wp_ajax_amsive_cookieyes_browser_check', array( Diagnostics::class, 'browser_check' ) );
         $settings = new Settings();
         add_action( 'admin_init', array( $settings, 'register' ) );
         add_action( 'admin_menu', array( $settings, 'menu' ) );
+    }
+
+    public function exclude_vendor_script( $excluded ) {
+        return $this->append_exclusions( $excluded, array( 'cdn-cookieyes.com/client_data/' ) );
+    }
+
+    public function exclude_inline_defaults( $excluded ) {
+        // WP Rocket combination checks the script body, not its id attribute.
+        if ( ! apply_filters( 'cookieyes_integration_consent_defaults_enabled', true ) ) {
+            return $excluded;
+        }
+        return $this->append_exclusions( $excluded, array( 'amsiveCookieYesConsentInitialized' ) );
+    }
+
+    public function exclude_delayed_scripts( $excluded ) {
+        return $this->exclude_inline_defaults( $this->exclude_vendor_script( $excluded ) );
+    }
+
+    private function append_exclusions( $excluded, $patterns ) {
+        $settings = Settings::get();
+        if ( ! $settings['enabled'] || ! Settings::valid_key( $settings['website_key'] ) ) {
+            return $excluded;
+        }
+        foreach ( $patterns as $pattern ) {
+            if ( ! in_array( $pattern, $excluded, true ) ) {
+                $excluded[] = $pattern;
+            }
+        }
+        return $excluded;
     }
 
     public function render_script() {

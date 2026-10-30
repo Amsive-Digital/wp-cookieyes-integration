@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+- Own WP Rocket exclusions in the integration plugin: protect the CookieYes CDN loader from minify/combine, defer and delay, and protect the inline consent defaults from combination and delay.
+- Preserve existing exclusions without duplicates, leave disabled/invalid installations unchanged, and respect the consent-defaults opt-out. No optimizer options or site settings are saved.
+- Remove the need for theme-specific WP Rocket compatibility snippets after this version is installed and enabled. Other optimizers still require their own exclusions.
+
 ## 0.3.2
 
 - Initialize Google Consent Mode v2 before the blocking CookieYes loader, denying nonessential consent types and granting security storage with a 2000 ms update wait.

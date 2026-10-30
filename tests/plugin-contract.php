@@ -55,6 +55,36 @@ if ( in_array( '--emit-frontend', $argv, true ) ) {
     exit;
 }
 
+// Execute registered optimizer filters while retaining caller exclusions and order.
+function optimizer_filter( $hook, $value ) {
+    global $hooks;
+    foreach ( $hooks[ $hook ][10] ?? array() as $callback ) { $value = $callback( $value ); }
+    return $value;
+}
+$optimizer_hooks = array( 'rocket_minify_excluded_external_js', 'rocket_exclude_defer_js', 'rocket_delay_js_exclusions', 'rocket_excluded_inline_js_content' );
+$existing_exclusions = array( 'existing-control', 'second-control' );
+foreach ( $optimizer_hooks as $hook ) {
+    check( isset( $hooks[$hook][10] ), 'Optimizer filter missing: ' . $hook );
+    foreach ( array( array(), array( 'enabled' => false, 'website_key' => 'synthetic_key' ), array( 'enabled' => true, 'website_key' => '../invalid' ) ) as $configuration ) {
+        store( $configuration );
+        check( $existing_exclusions === optimizer_filter( $hook, $existing_exclusions ), 'Unconfigured/disabled integration changed optimizer exclusions.' );
+    }
+    store( array( 'enabled' => true, 'website_key' => 'synthetic_key' ) );
+    $protected = optimizer_filter( $hook, $existing_exclusions );
+    check( $existing_exclusions === array_slice( $protected, 0, 2 ), 'Caller exclusions were replaced or reordered.' );
+    check( $protected === optimizer_filter( $hook, $protected ), 'Repeated optimizer filters added duplicate exclusions.' );
+    $vendor = 'rocket_excluded_inline_js_content' !== $hook;
+    $inline = in_array( $hook, array( 'rocket_delay_js_exclusions', 'rocket_excluded_inline_js_content' ), true );
+    check( in_array( 'cdn-cookieyes.com/client_data/', $protected, true ) === $vendor, 'Incorrect vendor exclusion scope.' );
+    check( in_array( 'amsiveCookieYesConsentInitialized', $protected, true ) === $inline, 'Incorrect inline exclusion scope.' );
+    $consent_defaults_enabled = false;
+    $without_defaults = optimizer_filter( $hook, $existing_exclusions );
+    check( ! in_array( 'amsiveCookieYesConsentInitialized', $without_defaults, true ), 'Opted-out defaults still excluded.' );
+    check( in_array( 'cdn-cookieyes.com/client_data/', $without_defaults, true ) === $vendor, 'Defaults opt-out removed vendor protection.' );
+    $consent_defaults_enabled = true;
+}
+store( array() );
+
 $settings = new Settings();
 $key = '5cfe4f28d3b2e213a2c75d46'; // Public documentation example, never used as a site installation.
 check( isset( $hooks['wp_head'][0] ), 'Early frontend hook is missing.' );
